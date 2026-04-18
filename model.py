@@ -10,7 +10,7 @@ import torch.nn as nn
 
 
 
-class big_model(nn.Module):
+class MultiLabelEnsemble(nn.Module):
     def __init__(self):
         print()
 

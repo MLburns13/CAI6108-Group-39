@@ -16,7 +16,7 @@ import torch.optim as optim
 import numpy as np
 
 
-def create_model(num_channels=3, num_outputs=12, drop_rate=0.0, learning_rate=0.001, decay=0):
+def create_model(num_channels=3, num_outputs=12, drop_rate=0.0, learning_rate=0.001, decay=0, pos_weights=None):
     """
     Function to create the model. Attaches an Adam optimizer and uses BCEWithLogitsLoss for loss function.
 
@@ -100,7 +100,7 @@ def create_model(num_channels=3, num_outputs=12, drop_rate=0.0, learning_rate=0.
         
     model = MultiLabelCNN(_num_channels=num_channels, _num_outputs=num_outputs, _drop_rate=drop_rate)
     model.optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=decay)
-    model.loss_func = nn.BCEWithLogitsLoss()
+    model.loss_func = nn.BCEWithLogitsLoss(pos_weight=pos_weights)
 
     return model
 

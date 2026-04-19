@@ -24,6 +24,7 @@ def create_model(num_channels=3, num_outputs=12, drop_rate=0.0, learning_rate=0.
     - drop_rate: probability of dropout for the drop out layer. Default is no dropout.
     - learning_rate: learning rate of the optimizer
     - decay: L2 regularization on the optimizer. Default is no regularization.
+    - pos_weights: Allows loss function to account for class imbalance
 
 
     Output:
@@ -32,6 +33,7 @@ def create_model(num_channels=3, num_outputs=12, drop_rate=0.0, learning_rate=0.
     """
 
     class MultiLabelCNN(nn.Module):
+        # Current parameter count: 973344
         def __init__(self, _num_channels=3, _num_outputs = 12, _drop_rate=0.0): 
             super(MultiLabelCNN, self).__init__()
 
@@ -60,8 +62,12 @@ def create_model(num_channels=3, num_outputs=12, drop_rate=0.0, learning_rate=0.
             nn.init.normal_(self.out.weight, mean=0.0, std=np.sqrt(0.1))
 
         def forward(self, x):
+            """
+            Expected input shape: [batch_size, num_channels, H, W]
 
-            # in shape: [batch_size, 3, 128, 128]
+            Output: tensor w/ shape [batch_size, 12]
+            """
+
 
             x = F.relu(self.conv1(x)) # out shape: [batch_size, 16, 128, 128]
             x = F.relu(self.conv2(x)) # out shape: [batch_size, 32, 64, 64]
@@ -77,7 +83,7 @@ def create_model(num_channels=3, num_outputs=12, drop_rate=0.0, learning_rate=0.
             x = F.relu(self.conv6(x)) # out shape: [batch_size, 512, 4, 4]
             x= self.pool(x) # out shape: [batch_size, 512, 2, 2]
 
-            x = torch.flatten(x) # out shape: [2048,]
+            x = torch.flatten(x) # out shape: [batch_size, 2048,]
 
             x = F.relu(self.fc1(x))
             x = self.drop(x)
@@ -88,7 +94,7 @@ def create_model(num_channels=3, num_outputs=12, drop_rate=0.0, learning_rate=0.
             x = F.relu(self.fc3(x))
             x = self.drop(x)
 
-            x = self.out(x)
+            x = self.out(x) # No sigmoid activation because this is handled by BCEWithLogitsLoss
 
             return x #return shape: [batch_size, 12]
         

@@ -106,9 +106,8 @@ def train():
     train_ds = ProjectDataset(train_x, train_y, transform=get_transforms(augment=True))
     val_ds   = ProjectDataset(val_x, val_y, transform=get_transforms())
 
-    train_loader = make_loader(train_ds, batch_size=64, shuffle=True, num_workers=0)
-    train_loader_no_shuffle = make_loader(train_ds, batch_size=64, shuffle=False, num_workers=0)
-    val_loader   = make_loader(val_ds, batch_size=64, num_workers=0)
+    train_loader = make_loader(train_ds, batch_size=128, shuffle=True, num_workers=4)
+    val_loader   = make_loader(val_ds, batch_size=128, num_workers=4)
     pos_weights = compute_pos_weights(train_y, device=str(device))
     model = create_model(num_channels=3, num_outputs=12, pos_weights=pos_weights)
     model = model.to(device)

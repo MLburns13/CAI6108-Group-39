@@ -17,7 +17,7 @@ import sys
 import time
 import argparse
 import re
-
+from model import create_model
 from pathlib import Path
 from PIL import Image
 
@@ -124,13 +124,12 @@ def load_trained_model(model_path, num_labels, device, image_size):
         model: The model loaded on device. (If you are not using pytorch nn.Module directly, it is fine but make sure what it loads is compatible with the rest of the code.)
     """
 
-    model = CREATE_YOUR_MODEL_HERE(num_labels=num_labels) # Replace with your model creation function
-
+    model = model = create_model(num_channels=3, num_outputs=num_labels) # Replace with your model creation function
     ## Change/rewrite the rest of the function as needed, but make sure what it outputs works with the other functions (e.g., predict)
 
     # Load local state dictionary
     state_dict = torch.load(model_path, map_location=device)
-    model.load_state_dict(state_dict)
+    model.load_state_dict(state_dict, strict=False)
 
     # Move the model to the specified device and set evaluation mode.
     model = model.to(device)
@@ -177,6 +176,7 @@ def evaluate_model(model, test_loader, device, threshold=0.5):
     """
     criterion = nn.BCEWithLogitsLoss()  # again this assumes the model output is logits
     running_loss = 0.0
+    total_samples = 0
 
     ## Change/rewrite the function as needed, but make sure it computes all these metrics correctly!
     ## Do *not* remove or change metrics. You can add new metrics if you want.)

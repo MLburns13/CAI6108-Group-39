@@ -26,6 +26,8 @@ import torch.nn as nn
 from torchvision import models, datasets, transforms
 from torch.utils.data import DataLoader, Dataset
 
+from model import create_model
+
 LABEL_ORDER = ["pen", "paper", "book", "clock", "phone", "laptop", "chair", "desk", "bottle", "keychain", "backpack", "calculator"]
 VALID_LABELS = set(LABEL_ORDER)
 LABEL_TO_IDX = {label: i for i, label in enumerate(LABEL_ORDER)}
@@ -124,7 +126,7 @@ def load_trained_model(model_path, num_labels, device, image_size):
         model: The model loaded on device. (If you are not using pytorch nn.Module directly, it is fine but make sure what it loads is compatible with the rest of the code.)
     """
 
-    model = CREATE_YOUR_MODEL_HERE(num_labels=num_labels) # Replace with your model creation function
+    model = create_model(num_labels=num_labels) # Replace with your model creation function
 
     ## Change/rewrite the rest of the function as needed, but make sure what it outputs works with the other functions (e.g., predict)
 

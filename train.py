@@ -9,7 +9,9 @@ import torch.nn as nn
 import torch.optim as optim
 import numpy as np
 import copy
+from matplotlib import pyplot as plt
 
+# Custom Imports
 from data import load_preprocess_project, ProjectDataset, get_transforms, make_loader, compute_pos_weights
 from model import create_model
 
@@ -17,7 +19,11 @@ seed = 42
 np.random.seed(seed)
 torch.manual_seed(seed)
 
-
+NUM_EPOCHS=250
+BATCH_SIZE=128
+LOAD_FROM_FILE=False
+GRAN=False
+THRESHOLD=0.6
 # early stopping from ex8
 class EarlyStopping:
     def __init__(self, patience=5, delta=0):
@@ -59,7 +65,7 @@ class ModelCheckpoint:
             torch.save(self.model.state_dict(), self.path)
 
 #computer_acc
-def compute_metrics(model, data_loader, device, threshold=0.5):
+def compute_metrics(model, data_loader, device, threshold=0.5, granular_f1=False):
     model.eval()
     all_preds = []
     all_labels = []
@@ -75,6 +81,7 @@ def compute_metrics(model, data_loader, device, threshold=0.5):
             all_preds.append(preds.cpu())
             all_labels.append(labels.cpu())
 
+
     all_preds = torch.cat(all_preds, dim=0)
     all_labels = torch.cat(all_labels, dim=0)
 
@@ -87,8 +94,75 @@ def compute_metrics(model, data_loader, device, threshold=0.5):
     fn = ((all_preds == 0) & (all_labels == 1)).sum().float()
 
     f1 = (2 * tp / (2 * tp + fp + fn + 1e-8)).item()
+    precision = tp / (tp+fp+1e-8)
+    recall = tp / (tp+fn+1e-8)
 
-    return match, hamming_acc, f1
+    if granular_f1:
+        #print f1 for every label
+        f1s = []
+        for i in range(all_preds.shape[1]):
+            tp = ((all_preds[:,i] == 1) & (all_labels[:,i] == 1)).sum().float()
+            fp = ((all_preds[:,i] == 1) & (all_labels[:,i] == 0)).sum().float()
+            fn = ((all_preds[:,i] == 0) & (all_labels[:,i] == 1)).sum().float()
+
+            f1s.append(round((2 * tp / (2 * tp + fp + fn + 1e-8)).item(),2))
+        
+        return match, hamming_acc, f1, f1s
+
+
+    return match, hamming_acc, f1, precision, recall
+
+
+# Plot the model's performance during training (across epochs) - pulled from HW4 - slightly modified
+def plot_training_perf(train_loss, val_loss, train_acc=None, val_acc=None, ax=None, fs=(5.5,2.8), plot_acc=True):
+    no_ax_provided = ax == None
+    if no_ax_provided:
+        fig = plt.figure(figsize=fs)
+        ax = plt.gca()
+
+    #assert train_loss.shape == val_loss.shape and train_loss.shape == val_acc.shape and val_acc.shape == train_acc.shape
+    
+    # assume we have one measurement per epoch
+    num_epochs = train_loss.shape[0]
+    epochs = np.arange(0, num_epochs)
+
+    if plot_acc:
+        ax.plot(1+epochs, train_acc, 'r--', linewidth=1.5, label='Training')
+        ax.plot(1+epochs, val_acc, 'b-', linewidth=1.5, label='Validation')
+        
+        ax.set_ylabel('Accuracy')
+        ax.set_xlabel('Epoch')
+    else:
+        ax.plot(1+epochs, train_loss, 'r--', linewidth=1.5, label='Training')
+        ax.plot(1+epochs, val_loss, 'b-', linewidth=1.5, label='Validation')
+        
+        ax.set_ylabel('Loss')
+        ax.set_xlabel('Epoch')
+    
+    ax.set_xlim([1, num_epochs])
+
+    if plot_acc:
+        ylim = [0.0, 1.01]
+    else:
+        ylim = [0.0, 1.26]
+    ax.set_ylim(ylim)
+
+    ax.legend()
+    if no_ax_provided:
+        #plt.show()
+        plt.tight_layout()
+        plt.savefig('loss_curve.png')
+
+def plot_lr(steps, lr, ax=None, fs=(5.5,2.8)):
+    fig = plt.figure()
+    ax = plt.gca()
+    ax.plot(steps, lr, label='ReduceOnLRPlateau')
+    ax.set_xlabel('Epoch')
+    ax.set_ylabel('Learning Rate')
+    ax.legend()
+
+    plt.tight_layout()
+    plt.savefig('lr.png')
 
 
 # training loop
@@ -103,24 +177,37 @@ def train():
         verbose=True
     )
 
-    train_ds = ProjectDataset(train_x, train_y, transform=get_transforms(augment=True))
+    train_ds = ProjectDataset(train_x, train_y, transform=get_transforms(augment=True, mode='strong'))
     val_ds   = ProjectDataset(val_x, val_y, transform=get_transforms())
 
-    train_loader = make_loader(train_ds, batch_size=128, shuffle=True, num_workers=4)
-    val_loader   = make_loader(val_ds, batch_size=128, num_workers=4)
+    train_loader = make_loader(train_ds, batch_size=BATCH_SIZE, shuffle=True, num_workers=4)
+    val_loader   = make_loader(val_ds, batch_size=BATCH_SIZE, num_workers=4)
     pos_weights = compute_pos_weights(train_y, device=str(device))
-    model = create_model(num_channels=3, num_outputs=12, pos_weights=pos_weights)
-    model = model.to(device)
+    model = create_model(num_channels=3, num_labels=12, drop_rate=0.4, decay=1e-3, 
+                        learning_rate=0.001, pos_weights=pos_weights)
+
+    if LOAD_FROM_FILE: # Load checkpointed file
+        state_dict = torch.load('2.pth', map_location=device)
+        model.load_state_dict(state_dict)
+    model.to(device)
 
     optimizer = model.optimizer
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, min_lr=1e-8, patience=5)
+    #scheduler = optim.lr_scheduler.OneCycleLR(optimizer, max_lr=0.01, epochs=NUM_EPOCHS, steps_per_epoch=len(train_loader))
+
     loss_fn   = model.loss_func  # BCE logit loss
 
     # call ex 8 model checkpointing and early stopping
-    early_stopping = EarlyStopping()
+    early_stopping = EarlyStopping(patience=10)
     checkpoint = ModelCheckpoint(model, "best_model.pth")
 
-    max_epochs = 30 #temp change if needed
+    max_epochs = NUM_EPOCHS #temp change if needed
 
+    train_losses = []
+    val_losses = []
+
+    steps = []
+    lrs = []
     # train loop ex 8
     for epoch in range(max_epochs):
 
@@ -136,9 +223,13 @@ def train():
             loss.backward()
             optimizer.step()
 
+            #scheduler.step()
+            #lrs.append(scheduler.get_last_lr()[0])
+            #steps.append(epoch * len(train_loader.dataset) + len(images))
             train_loss += loss.item() * images.size(0)
 
         train_loss /= len(train_loader.dataset)
+        train_losses.append(train_loss)
 
         model.eval()
         val_loss = 0
@@ -151,12 +242,24 @@ def train():
                 val_loss += loss.item() * images.size(0)
 
         val_loss /= len(val_loader.dataset)
+        val_losses.append(val_loss)
 
 
-        exact, hamming, f1 = compute_metrics(model, val_loader, device)
 
-        print(f"Epoch {epoch+1}, Train Loss: {train_loss:.2f}, Val Loss: {val_loss:.2f}, "
-      f"All Match: {exact:.2f}, Hamming: {hamming:.2f}, F1: {f1:.2f}")
+        if GRAN:
+            exact, hamming, f1, f1s = compute_metrics(model, val_loader, device, threshold=THRESHOLD, granular_f1=True)
+
+            print(f"Epoch {epoch+1} -- Train Loss: {train_loss:.2f}, Val Loss: {val_loss:.2f}, "
+        f"All Match: {exact:.2f}, Hamming: {hamming:.2f}, F1: {f1:.2f}, F1 by label: {f1s}")
+        else:
+            exact, hamming, f1, prec, recall = compute_metrics(model, val_loader, device, threshold=THRESHOLD)
+
+            print(f"Epoch {epoch+1} -- Train Loss: {train_loss:.2f}, Val Loss: {val_loss:.2f}, "
+        f"All Match: {exact:.2f}, Hamming: {hamming:.2f}, F1: {f1:.2f}, Precision: {prec:.2f}, Recall: {recall:.2f}")
+
+        scheduler.step(val_loss)
+        lrs.append(scheduler.get_last_lr()[0])
+        steps.append(epoch)
 
         # early stop/checkpoint logic
         checkpoint(val_loss)
@@ -172,6 +275,9 @@ def train():
     # save
     torch.save(model.state_dict(), "best_model.pth")
     print("Model saved to best_model.pth")
+
+    plot_lr(steps, lrs)
+    plot_training_perf(np.array(train_losses), np.array(val_losses), plot_acc=False)
 
 
 if __name__ == "__main__":

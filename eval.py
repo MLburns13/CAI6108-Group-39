@@ -17,7 +17,7 @@ import sys
 import time
 import argparse
 import re
-
+from model import create_model
 from pathlib import Path
 from PIL import Image
 
@@ -132,7 +132,7 @@ def load_trained_model(model_path, num_labels, device, image_size):
 
     # Load local state dictionary
     state_dict = torch.load(model_path, map_location=device)
-    model.load_state_dict(state_dict)
+    model.load_state_dict(state_dict, strict=False)
 
     # Move the model to the specified device and set evaluation mode.
     model = model.to(device)
@@ -179,6 +179,7 @@ def evaluate_model(model, test_loader, device, threshold=0.5):
     """
     criterion = nn.BCEWithLogitsLoss()  # again this assumes the model output is logits
     running_loss = 0.0
+    total_samples = 0
 
     ## Change/rewrite the function as needed, but make sure it computes all these metrics correctly!
     ## Do *not* remove or change metrics. You can add new metrics if you want.)

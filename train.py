@@ -3,6 +3,7 @@
 training pipeline for the project dataset
 """
 
+import argparse
 import model
 import torch
 import torch.nn as nn
@@ -10,6 +11,7 @@ import torch.optim as optim
 import numpy as np
 import copy
 from matplotlib import pyplot as plt
+from sklearn.metrics import accuracy_score, f1_score, hamming_loss
 
 # Custom Imports
 from data import load_preprocess_project, ProjectDataset, get_transforms, make_loader, compute_pos_weights
@@ -76,22 +78,19 @@ def compute_metrics(model, data_loader, device, threshold=0.5, granular_f1=False
 
             logits = model(images)
             probs = torch.sigmoid(logits)
-            preds = (probs >= threshold).float()
+            preds = (probs >= threshold).int()
 
             all_preds.append(preds.cpu())
             all_labels.append(labels.cpu())
 
+    all_preds = torch.cat(all_preds, dim=0).numpy()
+    all_labels = torch.cat(all_labels, dim=0).numpy().astype(int)
 
-    all_preds = torch.cat(all_preds, dim=0)
-    all_labels = torch.cat(all_labels, dim=0)
+    match = accuracy_score(all_labels, all_preds)
+    hamming_acc = 1.0 - hamming_loss(all_labels, all_preds)
+    f1 = f1_score(all_labels, all_preds, average="micro", zero_division=0)
 
-    match = (all_preds == all_labels).all(dim=1).float().mean().item()
-
-    hamming_acc = (all_preds == all_labels).float().mean().item()
-
-    tp = ((all_preds == 1) & (all_labels == 1)).sum().float()
-    fp = ((all_preds == 1) & (all_labels == 0)).sum().float()
-    fn = ((all_preds == 0) & (all_labels == 1)).sum().float()
+    return match, hamming_acc, f1
 
     f1 = (2 * tp / (2 * tp + fp + fn + 1e-8)).item()
     precision = tp / (tp+fp+1e-8)
@@ -166,22 +165,22 @@ def plot_lr(steps, lr, ax=None, fs=(5.5,2.8)):
 
 
 # training loop
-def train():
+def train(args):
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
     #load data
     train_x, train_y, test_x, test_y, val_x, val_y = load_preprocess_project(
-        root="aggregated", #change root to where data is 
+        root=args.root,
         verbose=True
     )
 
     train_ds = ProjectDataset(train_x, train_y, transform=get_transforms(augment=True, mode='strong'))
     val_ds   = ProjectDataset(val_x, val_y, transform=get_transforms())
 
-    train_loader = make_loader(train_ds, batch_size=BATCH_SIZE, shuffle=True, num_workers=4)
-    val_loader   = make_loader(val_ds, batch_size=BATCH_SIZE, num_workers=4)
+    train_loader = make_loader(train_ds, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers,)
+    val_loader   = make_loader(val_ds, batch_size=args.batch_size, num_workers=args.num_workers,)
     pos_weights = compute_pos_weights(train_y, device=str(device))
     model = create_model(num_channels=3, num_labels=12, drop_rate=0.4, decay=1e-3, 
                         learning_rate=0.001, pos_weights=pos_weights)
@@ -198,13 +197,10 @@ def train():
     loss_fn   = model.loss_func  # BCE logit loss
 
     # call ex 8 model checkpointing and early stopping
-    early_stopping = EarlyStopping(patience=10)
-    checkpoint = ModelCheckpoint(model, "best_model.pth")
+    early_stopping = EarlyStopping(patience=args.patience)
+    checkpoint = ModelCheckpoint(model, args.checkpoint_path)
 
-    max_epochs = NUM_EPOCHS #temp change if needed
-
-    train_losses = []
-    val_losses = []
+    max_epochs = args.epochs
 
     steps = []
     lrs = []
@@ -245,6 +241,7 @@ def train():
         val_losses.append(val_loss)
 
 
+        exact, hamming, f1 = compute_metrics(model, val_loader, device, threshold=args.threshold)
 
         if GRAN:
             exact, hamming, f1, f1s = compute_metrics(model, val_loader, device, threshold=THRESHOLD, granular_f1=True)
@@ -273,12 +270,12 @@ def train():
     early_stopping.load_best_model(model)
 
     # save
-    torch.save(model.state_dict(), "best_model.pth")
-    print("Model saved to best_model.pth")
+    torch.save(model.state_dict(), args.checkpoint_path)
+    print(f"Model saved to {args.checkpoint_path}")
 
     plot_lr(steps, lrs)
     plot_training_perf(np.array(train_losses), np.array(val_losses), plot_acc=False)
 
 
 if __name__ == "__main__":
-    train()
+    train(parse_args())

@@ -52,38 +52,24 @@ def create_model(num_channels=3, num_labels=12, drop_rate=0.0, learning_rate=0.0
             self.conv1 = nn.Conv2d(_num_channels, 32, 5, padding='same') 
             self.conv2 = nn.Conv2d(32, 64, 3, padding='same')
             self.conv3 = nn.Conv2d(64, 128, 3, padding='same')
-            self.conv4 = nn.Conv2d(128, 512, 3, padding='same') 
-            self.conv5 = nn.Conv2d(512, 512, 3, padding='same')
+            self.conv4 = nn.Conv2d(128, 256, 3, padding='same') 
+            self.conv5 = nn.Conv2d(256, 512, 3, padding='same')
             self.conv6 = nn.Conv2d(512, 512, 3, padding='same')
             self.conv7 = nn.Conv2d(512, 512, 3, padding='same')
-            self.conv8 = nn.Conv2d(512, 512, 3, padding='same')
 
             self.bn1 = nn.BatchNorm2d(32)
             self.bn2 = nn.BatchNorm2d(64)
             self.bn3 = nn.BatchNorm2d(128)
-            self.bn4 = nn.BatchNorm2d(512)
+            self.bn4 = nn.BatchNorm2d(256)
             self.bn5 = nn.BatchNorm2d(512)
             self.bn6 = nn.BatchNorm2d(512)
             self.bn7 = nn.BatchNorm2d(512)
-            self.bn8 = nn.BatchNorm2d(512)
 
             # layers for matching residual to x when doing skip connections
             self.downsample1 = nn.Conv2d(3, 64, 1, stride=4)
-            self.downsample2 = nn.Conv2d(64, 512, 1, stride=4)
-            self.downsample3 = nn.Conv2d(512, 512, 1, stride=4)
+            self.downsample2 = nn.Conv2d(64, 256, 1, stride=4)
+            self.downsample3 = nn.Conv2d(256, 512, 1, stride=4)
             self.downsample4 = nn.Conv2d(512, 512, 1, stride=2)
-            #self.bottle = Bottleneck(256, 64)
-
-            #self.fc1 = nn.Linear(2048, 512, bias=True) 
-            #nn.init.normal_(self.fc1.weight, mean=0.0, std=0.001)
-            #nn.init.zeros_(self.fc1.bias)
-
-            #self.fc2 = nn.Linear(512, 128, bias=True)
-            #nn.init.normal_(self.fc2.weight, mean=0.0, std=0.001)
-            #nn.init.zeros_(self.fc2.bias)
-
-            #self.fc3 = nn.Linear(128, 32, bias=False)
-            #nn.init.normal_(self.fc3.weight, mean=0.0, std=0.001)
 
             self.drop = nn.Dropout(p=_drop_rate)
 
@@ -124,7 +110,6 @@ def create_model(num_channels=3, num_labels=12, drop_rate=0.0, learning_rate=0.0
             identity = x
 
             x = F.relu(self.bn7(self.conv7(x)))
-            x = F.relu(self.bn8(self.conv8(x)))
             x = self.pool(x)
 
             x += self.downsample4(identity)
@@ -137,7 +122,6 @@ def create_model(num_channels=3, num_labels=12, drop_rate=0.0, learning_rate=0.0
         
     model = MultiLabelCNN(_num_channels=num_channels, _num_outputs=num_labels, _drop_rate=drop_rate)
     model.optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=decay)
-    #model.optimizer = optim.RMSprop(model.parameters(), lr=learning_rate, weight_decay=decay)
     model.loss_func = nn.BCEWithLogitsLoss(pos_weight=pos_weights)
 
     return model

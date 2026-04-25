@@ -4,7 +4,6 @@ training pipeline for the project dataset
 """
 
 import argparse
-import model
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -21,11 +20,13 @@ seed = 42
 np.random.seed(seed)
 torch.manual_seed(seed)
 
+# Deprecated from training
 NUM_EPOCHS=250
 BATCH_SIZE=128
 LOAD_FROM_FILE=False
 GRAN=False
 THRESHOLD=0.6
+
 # early stopping from ex8
 class EarlyStopping:
     def __init__(self, patience=5, delta=0):
@@ -90,7 +91,7 @@ def compute_metrics(model, data_loader, device, threshold=0.5, granular_f1=False
     hamming_acc = 1.0 - hamming_loss(all_labels, all_preds)
     f1 = f1_score(all_labels, all_preds, average="micro", zero_division=0)
 
-    return match, hamming_acc, f1
+
 
     f1 = (2 * tp / (2 * tp + fp + fn + 1e-8)).item()
     precision = tp / (tp+fp+1e-8)
@@ -111,6 +112,18 @@ def compute_metrics(model, data_loader, device, threshold=0.5, granular_f1=False
 
     return match, hamming_acc, f1, precision, recall
 
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Parse arguments for training the image classifier."
+    )
+    parser.add_argument("--root", type=str, default="aggregated",)
+    parser.add_argument("--batch-size",type=int,default=128,)
+    parser.add_argument( "--num-workers",type=int,default=4,)
+    parser.add_argument("--epochs",type=int,default=30,)
+    parser.add_argument("--patience",type=int,default=5,)
+    parser.add_argument("--threshold",type=float,default=0.5,)
+    parser.add_argument("--checkpoint-path",type=str,default="best_model.pth",)
+    return parser.parse_args()
 
 # Plot the model's performance during training (across epochs) - pulled from HW4 - slightly modified
 def plot_training_perf(train_loss, val_loss, train_acc=None, val_acc=None, ax=None, fs=(5.5,2.8), plot_acc=True):
@@ -118,8 +131,6 @@ def plot_training_perf(train_loss, val_loss, train_acc=None, val_acc=None, ax=No
     if no_ax_provided:
         fig = plt.figure(figsize=fs)
         ax = plt.gca()
-
-    #assert train_loss.shape == val_loss.shape and train_loss.shape == val_acc.shape and val_acc.shape == train_acc.shape
     
     # assume we have one measurement per epoch
     num_epochs = train_loss.shape[0]
@@ -192,7 +203,6 @@ def train(args):
 
     optimizer = model.optimizer
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, min_lr=1e-8, patience=5)
-    #scheduler = optim.lr_scheduler.OneCycleLR(optimizer, max_lr=0.01, epochs=NUM_EPOCHS, steps_per_epoch=len(train_loader))
 
     loss_fn   = model.loss_func  # BCE logit loss
 
@@ -201,6 +211,9 @@ def train(args):
     checkpoint = ModelCheckpoint(model, args.checkpoint_path)
 
     max_epochs = args.epochs
+
+    train_losses = []
+    val_losses = []
 
     steps = []
     lrs = []
@@ -219,9 +232,6 @@ def train(args):
             loss.backward()
             optimizer.step()
 
-            #scheduler.step()
-            #lrs.append(scheduler.get_last_lr()[0])
-            #steps.append(epoch * len(train_loader.dataset) + len(images))
             train_loss += loss.item() * images.size(0)
 
         train_loss /= len(train_loader.dataset)
@@ -241,18 +251,10 @@ def train(args):
         val_losses.append(val_loss)
 
 
-        exact, hamming, f1 = compute_metrics(model, val_loader, device, threshold=args.threshold)
-
-        if GRAN:
-            exact, hamming, f1, f1s = compute_metrics(model, val_loader, device, threshold=THRESHOLD, granular_f1=True)
-
-            print(f"Epoch {epoch+1} -- Train Loss: {train_loss:.2f}, Val Loss: {val_loss:.2f}, "
-        f"All Match: {exact:.2f}, Hamming: {hamming:.2f}, F1: {f1:.2f}, F1 by label: {f1s}")
-        else:
-            exact, hamming, f1, prec, recall = compute_metrics(model, val_loader, device, threshold=THRESHOLD)
-
-            print(f"Epoch {epoch+1} -- Train Loss: {train_loss:.2f}, Val Loss: {val_loss:.2f}, "
+        exact, hamming, f1, prec, recall = compute_metrics(model, val_loader, device, threshold=args.threshold)
+        print(f"Epoch {epoch+1} -- Train Loss: {train_loss:.2f}, Val Loss: {val_loss:.2f}, "
         f"All Match: {exact:.2f}, Hamming: {hamming:.2f}, F1: {f1:.2f}, Precision: {prec:.2f}, Recall: {recall:.2f}")
+
 
         scheduler.step(val_loss)
         lrs.append(scheduler.get_last_lr()[0])
